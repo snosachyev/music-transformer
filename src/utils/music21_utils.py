@@ -25,6 +25,12 @@ def midi_to_notes(file_path):
 
 
 def split_parts(notes, melody_threshold=60, chord_threshold=48):
+    """
+       Простейшее разделение по высоте:
+       - >melody_threshold → мелодия
+       - между chord_threshold и melody_threshold → аккорды
+       - <chord_threshold → бас
+    """
     melody, chords, bass = [], [], []
     for n in notes:
         p = n['pitch']
