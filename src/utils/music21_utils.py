@@ -3,6 +3,8 @@
 """
 import os
 
+import numpy as np
+
 from music21 import converter, instrument, note, chord, stream
 
 
@@ -60,3 +62,18 @@ def get_midis_by_compositor(compositor):
             midi = converter.parse(tr)
             midis.append(midi)
     return midis
+
+
+def sequence_to_part(seq, instr_name="Piano"):
+    """
+    Преобразует массив [[pitch, step, duration], ...] в партию music21.
+    """
+    part = stream.Part()
+    part.insert(0, instrument.fromString(instr_name))
+    offset = 0.0
+    for p, s, d in seq:
+        n = note.Note(int(np.clip(p, 21, 108)))# диапазон MIDI клавиатуры
+        n.quarterLength = max(0.25, float(d))# минимальная длительность = 1/
+        part.insert(offset, n)
+        offset += float(s)
+    return part
