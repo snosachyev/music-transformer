@@ -17,6 +17,19 @@ def generate_autoregressive(model, enc_input, seed_dec, length=32):
     return dec_seq
 
 
+def generate_full_autoregressive(model, enc_input, seed_dec, length=32):
+    dec_seq = seed_dec.copy()
+    for _ in range(length - seed_dec.shape[1]):
+        preds = model.predict([enc_input, dec_seq], verbose=0)
+        pitch_pred, step_pred, dur_pred = preds
+        next_pitch = pitch_pred[:, -1:, :]
+        next_step = step_pred[:, -1:, :]
+        next_dur = dur_pred[:, -1:, :]
+        next_token = np.concatenate([next_pitch, next_step, next_dur], axis=-1)
+        dec_seq = np.concatenate([dec_seq, next_token], axis=1)
+    return dec_seq
+
+
 def generated_to_part(generated, name="Generated", make_chords=False):
     """
     Превращает предсказанную последовательность в music21.Part
