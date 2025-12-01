@@ -1,99 +1,113 @@
 """
 Создание архитектуры Transformer (энкодер-декодер).
 """
-from keras.layers import Input, Dense, Dropout, LayerNormalization, MultiHeadAttention, Add, Activation
 
-from keras.models import Model
-
-
-def transformer_encoder_block(x, d_model, num_heads, ff_dim, dropout=0.1):
-    attn = MultiHeadAttention(num_heads=num_heads, key_dim=d_model)(x, x)
-    attn = Dropout(dropout)(attn)
-    x = LayerNormalization(epsilon=1e-6)(x + attn)
-    ff = Dense(ff_dim, activation='relu')(x)
-    ff = Dense(d_model)(ff)
-    ff = Dropout(dropout)(ff)
-    return LayerNormalization(epsilon=1e-6)(x + ff)
+import torch
+import torch.nn as nn
+import math
 
 
-def transformer_decoder_block(x, enc, d_model, num_heads, ff_dim, dropout=0.1):
-    self_attn = MultiHeadAttention(num_heads=num_heads, key_dim=d_model)(x, x)
-    self_attn = Dropout(dropout)(self_attn)
-    x = LayerNormalization(epsilon=1e-6)(x + self_attn)
-    cross_attn = MultiHeadAttention(num_heads=num_heads, key_dim=d_model)(x, enc)
-    cross_attn = Dropout(dropout)(cross_attn)
-    x = LayerNormalization(epsilon=1e-6)(x + cross_attn)
-    ff = Dense(ff_dim, activation='relu')(x)
-    ff = Dense(d_model)(ff)
-    ff = Dropout(dropout)(ff)
-    return LayerNormalization(epsilon=1e-6)(x + ff)
+class TripleLoss(nn.Module):
+    def __init__(self, pitch_vocab):
+        super().__init__()
+        self.pitch_loss = nn.CrossEntropyLoss()
+        self.mse = nn.MSELoss()
+
+    def forward(self, pitch_logits, step_out, dur_out, pitch_targets, step_targets, dur_targets):
+        B, L, C = pitch_logits.shape
+        pitch_logits_flat = pitch_logits.reshape(B * L, C)
+        pitch_targets_flat = pitch_targets.reshape(B * L)
+
+        step_out_flat = step_out.reshape(B * L, -1)
+        step_targets_flat = step_targets.reshape(B * L, -1)
+
+        dur_out_flat = dur_out.reshape(B * L, -1)
+        dur_targets_flat = dur_targets.reshape(B * L, -1)
+
+        loss_pitch = self.pitch_loss(pitch_logits_flat, pitch_targets_flat)
+        loss_step = self.mse(step_out_flat, step_targets_flat)
+        loss_dur = self.mse(dur_out_flat, dur_targets_flat)
+
+        return loss_pitch + loss_step + loss_dur, (loss_pitch, loss_step, loss_dur)
 
 
-def build_transformer(F=3, d_model=128, num_heads=4, ff_dim=256, num_layers=2, dropout=0.1):
-    """
-    Создает простую Transformer seq2seq модель.
-    """
-    enc_inputs = Input(shape=(None, F))
-    dec_inputs = Input(shape=(None, F))
-    x_enc = Dense(d_model)(enc_inputs)
-    for _ in range(num_layers):
-        x_enc = transformer_encoder_block(x_enc, d_model, num_heads, ff_dim, dropout)
-    x_dec = Dense(d_model)(dec_inputs)
-    for _ in range(num_layers):
-        x_dec = transformer_decoder_block(x_dec, x_enc, d_model, num_heads, ff_dim, dropout)
-    outputs = Dense(F)(x_dec)
-    model = Model([enc_inputs, dec_inputs], outputs)
-    model.compile(optimizer='adam', loss='mse')
-    return model
+# -----------------------------------------------------
+# Linear embedding: (pitch, step, dur) → d_model
+# -----------------------------------------------------
+class EventEmbedding(nn.Module):
+    def __init__(self, d_model, pitch_vocab):
+        super().__init__()
+        self.pitch_emb = nn.Embedding(pitch_vocab, d_model)
+        self.step_linear = nn.Linear(1, d_model)
+        self.dur_linear = nn.Linear(1, d_model)
+        self.proj = nn.Linear(d_model * 3, d_model)
+
+    def forward(self, x):
+        # x: (B, L, 3)
+        pitch = x[..., 0].long()
+        step = x[..., 1].float()
+        dur = x[..., 2].float()
+
+        pitch_emb = self.pitch_emb(pitch)
+        step_emb = self.step_linear(step.unsqueeze(-1))
+        dur_emb = self.dur_linear(dur.unsqueeze(-1))
+
+        out = torch.cat([pitch_emb, step_emb, dur_emb], dim=-1)
+        return self.proj(out)
 
 
-def build_triple_output_transformer(d_model=192, num_heads=4, ff_dim=512,
-                                    enc_feat=3, dec_feat=3, num_pitch_classes=88,
-                                    step_activation='relu', dur_activation='relu'):
-    """
-    Возвращает Keras Model:
-      inputs: [enc_inputs, dec_inputs]
-      outputs: [pitch_logits (no activation), step_out, duration_out]
-    step_out и duration_out имеют активацию step_activation и dur_activation (relu по умолчанию).
-    """
-    enc_inputs = Input(shape=(None, enc_feat), name="encoder_inputs")
-    dec_inputs = Input(shape=(None, dec_feat), name="decoder_inputs")
+# -----------------------------------------------------
+# Model B — Encoder–Decoder Transformer
+# -----------------------------------------------------
+class MusicTransformerED(nn.Module):
+    def __init__(self, pitch_vocab=128, d_model=256, n_heads=8, n_layers=6):
+        super().__init__()
+        self.pitch_emb = nn.Embedding(pitch_vocab, d_model)
+        self.step_emb = nn.Linear(1, d_model)
+        self.dur_emb = nn.Linear(1, d_model)
 
-    # проекция
-    enc_proj = Dense(d_model, name="enc_proj")(enc_inputs)
-    dec_proj = Dense(d_model, name="dec_proj")(dec_inputs)
+        encoder_layer = nn.TransformerEncoderLayer(d_model, n_heads, d_model * 4, batch_first=True)
+        decoder_layer = nn.TransformerDecoderLayer(d_model, n_heads, d_model * 4, batch_first=True)
+        self.encoder = nn.TransformerEncoder(encoder_layer, n_layers)
+        self.decoder = nn.TransformerDecoder(decoder_layer, n_layers)
 
-    # Encoder stack (маленький)
-    x = enc_proj
-    for i in range(3):
-        att = MultiHeadAttention(num_heads=num_heads, key_dim=d_model // num_heads, name=f"enc_mha_{i}")(x, x)
-        x = LayerNormalization(name=f"enc_ln1_{i}")(Add()([x, att]))
-        f = Dense(ff_dim, activation="relu", name=f"enc_ff1_{i}")(x)
-        f = Dense(d_model, name=f"enc_ff2_{i}")(f)
-        x = LayerNormalization(name=f"enc_ln2_{i}")(Add()([x, f]))
-    enc_out = x  # (batch, L_enc, d_model)
+        self.pitch_out = nn.Linear(d_model, pitch_vocab)
+        self.step_out = nn.Linear(d_model, 1)
+        self.dur_out = nn.Linear(d_model, 1)
 
-    # Decoder stack
-    y = dec_proj
-    for i in range(3):
-        att1 = MultiHeadAttention(num_heads=num_heads, key_dim=d_model // num_heads, name=f"dec_self_mha_{i}")(y, y)
-        y = LayerNormalization(name=f"dec_ln_self_{i}")(Add()([y, att1]))
+    def embed(self, x):
+        pitch = x[..., 0].long()
+        step = x[..., 1:2].float()
+        dur = x[..., 2:3].float()
+        return self.pitch_emb(pitch) + self.step_emb(step) + self.dur_emb(dur)
 
-        att2 = MultiHeadAttention(num_heads=num_heads, key_dim=d_model // num_heads, name=f"dec_cross_mha_{i}")(y,
-                                                                                                                enc_out)
-        y = LayerNormalization(name=f"dec_ln_cross_{i}")(Add()([y, att2]))
+    def forward(self, enc_in, dec_in, enc_mask=None, dec_mask=None):
+        enc = self.embed(enc_in)
+        dec = self.embed(dec_in)
+        mem = self.encoder(enc, src_key_padding_mask=enc_mask)
+        out = self.decoder(dec, mem, tgt_key_padding_mask=dec_mask, memory_key_padding_mask=enc_mask)
+        pitch = self.pitch_out(out)
+        step = self.step_out(out)
+        dur = self.dur_out(out)
+        return pitch, step, dur
 
-        f = Dense(ff_dim, activation="relu", name=f"dec_ff1_{i}")(y)
-        f = Dense(d_model, name=f"dec_ff2_{i}")(f)
-        y = LayerNormalization(name=f"dec_ln_ff_{i}")(Add()([y, f]))
 
-    # outputs
-    # pitch — logits (softmax будет внутри loss)
-    pitch_out = Dense(num_pitch_classes, activation=None, name="pitch_out")(y)
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=5000):
+        super().__init__()
 
-    # step/dur — используем relu (или указанную активацию), чтобы гарантировать >=0
-    step_out = Dense(1, activation=step_activation, name="step_out")(y)
-    dur_out = Dense(1, activation=dur_activation, name="duration_out")(y)
+        pe = torch.zeros(max_len, d_model)  # (max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float()
+                             * (-math.log(10000.0) / d_model))
 
-    model = Model([enc_inputs, dec_inputs], [pitch_out, step_out, dur_out])
-    return model
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+        pe = pe.unsqueeze(0)  # (1, max_len, d_model)
+
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        # x: (B, L, d_model)
+        return x + self.pe[:, :x.size(1), :]
