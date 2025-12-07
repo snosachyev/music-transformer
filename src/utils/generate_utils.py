@@ -1,7 +1,9 @@
 """
 Генерация последовательностей и конвертация в music21 объекты.
 """
+from src.constants import DEVICE
 
+import numpy as np
 import torch
 
 
@@ -78,3 +80,49 @@ def generate_full_autoregressive(
         generated.append(next_token)
 
     return torch.cat(generated, dim=1).cpu().numpy()
+
+
+# --------------------
+#  Autoregressive generation
+# --------------------
+@torch.no_grad()
+def generate_autoregressive(model, seed, length=128, pitch_temp=1.0, cont_temp=0.0, device=DEVICE):
+    """
+    seed: np.array shape (1,1,3) normalized (pitch label offset, step_norm, dur_norm)
+    returns numpy (1, length+1, 3) normalized (first token = seed)
+    """
+    model.eval()
+    gen = [torch.tensor(seed, dtype=torch.float32, device=device)]
+
+    for t in range(length):
+        dec_in = torch.cat(gen, dim=1)  # (1, t+1, 3)
+        pitch_logits, step_out, dur_out = model(dec_in)
+        logits = pitch_logits[:, -1, :]  # (1, C)
+        if pitch_temp == 0.0:
+            pitch_idx = torch.argmax(logits, dim=-1)
+        else:
+            probs = torch.softmax(logits / float(pitch_temp), dim=-1)
+            probs = probs.cpu().numpy()[0]
+            # sample
+            pitch_idx = np.random.choice(len(probs), p=probs)
+            pitch_idx = torch.tensor([pitch_idx], device=device)
+
+        pitch_next = pitch_idx.float().view(1, 1, 1)
+
+        step_val = step_out[:, -1, :].view(1, 1, 1)
+        dur_val = dur_out[:, -1, :].view(1, 1, 1)
+
+        # stochastic cont sampling: add gaussian noise scaled by cont_temp
+        if cont_temp > 0.0:
+            step_val = step_val + torch.randn_like(step_val) * cont_temp
+            dur_val = dur_val + torch.randn_like(dur_val) * cont_temp
+
+        # safety clamp
+        step_val = torch.clamp(step_val, min=0.0)
+        dur_val = torch.clamp(dur_val, min=0.01)
+
+        next_token = torch.cat([pitch_next, step_val, dur_val], dim=-1)
+        gen.append(next_token)
+
+    arr = torch.cat(gen, dim=1).cpu().numpy()
+    return arr  # shape (1, L+1, 3)
