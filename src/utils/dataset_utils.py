@@ -38,41 +38,33 @@ def prepare_sample(sample,
                    pitch_offset,
                    step_max,
                    dur_max):
-    """
-    Превращает сырой sample (из extract_sample)
-    в dict с numpy массивами:
-      enc_in:        (L_enc, 3)
-      dec_in:        (L_dec, 3)
-      pitch_targets: (L_dec,)
-      step_targets:  (L_dec, 1)
-      dur_targets:   (L_dec, 1)
-    """
-
     # -----------------------------
-    # Encoder input: concat всех input instruments
+    # Encoder
     # -----------------------------
     enc_notes = []
     for inst in input_instruments or []:
         if inst in sample:
             enc_notes.extend(sample[inst])
+
     enc_notes.sort(key=lambda x: x['start'])
 
-    # нормализация
     enc_arr = []
     for n in enc_notes[:L_enc]:
+        p = n['pitch'] - pitch_offset
+        p = max(0, min(127, p))
         enc_arr.append([
-            n['pitch'] - pitch_offset,
+            p,
             n['start'] / step_max,
             n['dur'] / dur_max
         ])
 
-    # паддинг
     while len(enc_arr) < L_enc:
         enc_arr.append([0, 0, 0])
+
     enc_arr = np.array(enc_arr, dtype=np.float32)
 
     # -----------------------------
-    # Decoder input + Targets (target instrument ONLY)
+    # Decoder TARGETS
     # -----------------------------
     dec_notes = sample.get(target_instrument, [])
     dec_notes.sort(key=lambda x: x['start'])
@@ -83,46 +75,55 @@ def prepare_sample(sample,
 
     prev_start = 0.0
     for n in dec_notes[:L_dec]:
-        pitches.append(n['pitch'] - pitch_offset)
-        steps.append([n['start'] - prev_start])
-        durs.append([n['dur']])
+        p = n['pitch'] - pitch_offset
+        p = max(0, min(127, p))  # ★ clamp
+
+        step = (n['start'] - prev_start) / step_max
+        dur = n['dur'] / dur_max
+
+        pitches.append(p)
+        steps.append([step])
+        durs.append([dur])
+
         prev_start = n['start']
 
-    # Паддинг targets
     while len(pitches) < L_dec:
         pitches.append(0)
-        steps.append([0])
-        durs.append([0])
+        steps.append([0.0])
+        durs.append([0.0])
 
     pitch_targets = np.array(pitches, dtype=np.int64)
     step_targets = np.array(steps, dtype=np.float32)
     dur_targets = np.array(durs, dtype=np.float32)
 
     # -----------------------------
-    # Decoder input = targets but shifted (teacher forcing)
+    # Decoder INPUT (teacher forcing)
     # -----------------------------
     dec_in = []
-    dec_prev_start = 0.0
-    for i in range(min(L_dec, len(dec_notes))):
-        n = dec_notes[i]
-        dec_in.append([
-            n['pitch'] - pitch_offset,
-            (n['start'] - dec_prev_start) / step_max,
-            n['dur'] / dur_max
-        ])
-        dec_prev_start = n['start']
+    prev_start = 0.0
+    for n in dec_notes[:L_dec]:
+        p = n['pitch'] - pitch_offset
+        p = max(0, min(127, p))
+
+        step = (n['start'] - prev_start) / step_max
+        dur = n['dur'] / dur_max
+
+        dec_in.append([p, step, dur])
+        prev_start = n['start']
 
     while len(dec_in) < L_dec:
         dec_in.append([0, 0, 0])
+
     dec_in = np.array(dec_in, dtype=np.float32)
 
     return {
-        "enc_in": enc_arr,  # (L_enc, 3)
-        "dec_in": dec_in,  # (L_dec, 3)
-        "pitch_targets": pitch_targets,  # (L_dec,)
-        "step_targets": step_targets,  # (L_dec, 1)
-        "dur_targets": dur_targets  # (L_dec, 1)
+        "enc_in": enc_arr,
+        "dec_in": dec_in,
+        "pitch_targets": pitch_targets,
+        "step_targets": step_targets,
+        "dur_targets": dur_targets
     }
+
 
 
 # -----------------------------
