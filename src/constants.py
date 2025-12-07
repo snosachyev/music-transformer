@@ -23,8 +23,6 @@ PITCH_VOCAB = 128
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device:", DEVICE)
-# Use utils denorm if available
-# denormalize_sequence_global = (denorm_from_utils if has_utils else denormalize_sequence_global_local)
 
 input_instruments = ['Piaro right', 'Piano left2']
 target_instrument = 'Piano'
