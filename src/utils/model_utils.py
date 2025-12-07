@@ -8,7 +8,7 @@ import math
 
 
 class TripleLoss(nn.Module):
-    def __init__(self, pitch_vocab):
+    def __init__(self,):
         super().__init__()
         self.pitch_loss = nn.CrossEntropyLoss()
         self.mse = nn.MSELoss()
