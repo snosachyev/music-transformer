@@ -237,6 +237,53 @@ def extract_sample(score, global_instruments: List[str]) -> Dict[str, List[Dict[
     return sample
 
 
+# ---------------------------------------------------------
+# Helper: robust note field extraction
+# ---------------------------------------------------------
+def _safe_note_fields(n: Dict[str, Any]):
+    """
+    Return (pitch:int, start:float, dur:float) or (None, None, None) if unusable.
+    Accepts different key names and fallback defaults.
+    """
+    pitch = None
+    for k in ("pitch", "midi", "note"):
+        if isinstance(n, dict) and k in n:
+            pitch = n[k]
+            break
+    # fallback if n is tuple or list
+    if pitch is None and hasattr(n, "__len__") and len(n) >= 1:
+        try:
+            pitch = int(n[0])
+        except Exception:
+            pitch = None
+    # start
+    start = None
+    for k in ("start", "offset", "onset"):
+        if isinstance(n, dict) and k in n:
+            try:
+                start = float(n[k])
+                break
+            except Exception:
+                pass
+    if start is None:
+        start = 0.0
+    # dur
+    dur = None
+    for k in ("dur", "duration", "quarterLength", "length"):
+        if isinstance(n, dict) and k in n:
+            try:
+                dur = float(n[k])
+                break
+            except Exception:
+                pass
+    if dur is None:
+        # fallback default
+        dur = 0.5
+    if pitch is None:
+        return None, None, None
+    return int(pitch), float(start), float(dur)
+
+
 def save_melody_midi(seq, fp="generated_melody.mid", instr_name="Piano"):
     sc = stream.Score()
     p = seq_to_part(seq, part_name="Melody", instr_name=instr_name)
