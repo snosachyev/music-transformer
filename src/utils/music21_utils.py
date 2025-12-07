@@ -235,3 +235,11 @@ def extract_sample(score, global_instruments: List[str]) -> Dict[str, List[Dict[
                     })
         sample[inst_name] = notes
     return sample
+
+
+def save_melody_midi(seq, fp="generated_melody.mid", instr_name="Piano"):
+    sc = stream.Score()
+    p = seq_to_part(seq, part_name="Melody", instr_name=instr_name)
+    sc.insert(0, p)
+    sc.write('midi', fp=fp)
+    return fp
