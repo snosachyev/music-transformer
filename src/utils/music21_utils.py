@@ -4,6 +4,8 @@
 
 import os
 
+from collections import Counter
+
 import numpy as np
 
 from typing import List, Dict, Any
@@ -290,3 +292,35 @@ def save_melody_midi(seq, fp="generated_melody.mid", instr_name="Piano"):
     sc.insert(0, p)
     sc.write('midi', fp=fp)
     return fp
+
+
+def get_rare_note(all_notes: list):
+    ### Удаляем мало повторяемые ноты
+
+    count_num = Counter([note['pitch'] for note in all_notes])
+
+    # Ключ в словаре - имена нот
+    # Значение в словаре - их количество
+
+    # Notes = list(count_num.keys())
+    Recurrence = list(count_num.values())
+
+    # Средняя частота встречаемости нот в корпусе
+    def Average(rec):
+        return sum(rec) / len(rec)
+
+    print('Средняя повторяемость ноты:', Average(Recurrence))
+    print('Наиболее часто встречаемые ноты:', max(Recurrence), 'раз')
+    print('Наиболее редкие ноты:', min(Recurrence), 'раз')
+
+    # Будем избавляться от нот, которые встретились менее 100 раз.
+
+    # Получение списка редких нот
+    rare_notes = []
+    for index, (key, value) in enumerate(count_num.items()):
+        if value < 100:
+            m = key
+            rare_notes.append(m)
+
+    print("Общее число нот, которые повторяются менее 100 раз:", len(rare_notes))
+    return rare_notes
