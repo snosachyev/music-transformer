@@ -50,3 +50,26 @@ def train_epoch(model, loader, optimizer, criterion, device):
         total_loss += loss.item()
         total_steps += 1
     return total_loss / max(1, total_steps)
+
+
+# ---------------------------------------------------------
+# Training helpers (small, local variants)
+# ---------------------------------------------------------
+def train_epoch_decoder_only(model, loader, optimizer, criterion, device):
+    model.train()
+    total = 0.0
+    steps = 0
+    for batch in loader:
+        dec_in = batch["dec_in"].to(device)
+        pitch_t = batch["pitch_targets"].unsqueeze(-1).to(device)
+        step_t = batch["step_targets"].to(device)
+        dur_t = batch["dur_targets"].to(device)
+        dec_tgt = torch.cat([pitch_t, step_t, dur_t], dim=-1).to(device)
+        optimizer.zero_grad()
+        pitch_logits, step_out, dur_out = model(dec_in)
+        loss, parts = criterion(pitch_logits, step_out, dur_out, dec_tgt)
+        loss.backward();
+        optimizer.step()
+        total += loss.item();
+        steps += 1
+    return total / max(1, steps)
