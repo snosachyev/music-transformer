@@ -173,7 +173,7 @@ def seq_to_part(seq, part_name="Part", instr_name="Piano"):
     return part
 
 
-def save_multi_track_midi(enc1_seq, enc2_seq, gen_seq, fp="out.mid",
+def save_multi_track_midi(gen_seq, enc1_seq = None, enc2_seq = None, fp="out.mid",
                           instr1="Piano", instr2="Piano", instr_gen="Accordion"):
     """
     Собирает score с 2 или 3 партиями и сохраняет в MIDI.
