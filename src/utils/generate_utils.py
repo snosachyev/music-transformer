@@ -126,3 +126,84 @@ def generate_autoregressive(model, seed, length=128, pitch_temp=1.0, cont_temp=0
 
     arr = torch.cat(gen, dim=1).cpu().numpy()
     return arr  # shape (1, L+1, 3)
+
+
+@torch.no_grad()
+def generate_target_from_melody_encdec(model, melody_enc_norm, seed=None, length=None, pitch_temp=0.9, cont_temp=0.02,
+                                       device=DEVICE):
+    """
+    melody_enc_norm: (1, L_enc, 3) normalized
+    seed: (1,1,3) or None
+    returns numpy (1, L_generated+1, 3) normalized (first token = seed if provided)
+    """
+    model.eval()
+    enc_in = torch.tensor(melody_enc_norm, dtype=torch.float32, device=device)
+    if seed is None:
+        dec_tokens = [torch.zeros((1, 1, 3), dtype=torch.float32, device=device)]
+    else:
+        dec_tokens = [torch.tensor(seed, dtype=torch.float32, device=device)]
+    target_len = length if length is not None else (melody_enc_norm.shape[1])
+    for t in range(target_len):
+        dec_in = torch.cat(dec_tokens, dim=1)
+        pitch_logits, step_out, dur_out = model(enc_in, dec_in)
+        logits = pitch_logits[:, -1, :]
+        probs = torch.softmax(logits / float(pitch_temp), dim=-1)
+        idx = torch.multinomial(probs, num_samples=1).squeeze(1)
+        pitch_next = idx.float().view(1, 1, 1)
+        step_next = step_out[:, -1, :].view(1, 1, 1)
+        dur_next = dur_out[:, -1, :].view(1, 1, 1)
+        if cont_temp > 0:
+            step_next = step_next + torch.randn_like(step_next) * cont_temp
+            dur_next = dur_next + torch.randn_like(dur_next) * cont_temp
+        step_next = torch.clamp(step_next, min=0.0)
+        dur_next = torch.clamp(dur_next, min=0.01)
+        next_token = torch.cat([pitch_next, step_next, dur_next], dim=-1)
+        dec_tokens.append(next_token)
+    return torch.cat(dec_tokens, dim=1).cpu().numpy()
+
+
+@torch.no_grad()
+def generate_autoregressive_decoder_only(
+        model, seed, length=1,
+        pitch_temp=1.0, cont_temp=0.0, device=DEVICE):
+    model.eval()
+
+    gen = torch.tensor(seed, dtype=torch.float32, device=device)  # (1, L0, 3)
+    prev_step = gen[:, -1, 1].clone()  # последний step в seed (абсолютный)
+
+    for t in range(length):
+        L = gen.size(1)
+        causal_mask = torch.triu(
+            torch.ones(L, L, dtype=torch.bool, device=device),
+            diagonal=1
+        )
+
+        pitch_logits, step_out, dur_out = model(gen, tgt_mask=causal_mask)
+
+        # последний токен
+        logits = pitch_logits[:, -1, :]
+
+        if pitch_temp == 0.0:
+            idx = logits.argmax(dim=-1)
+        else:
+            probs = torch.softmax(logits / pitch_temp, dim=-1)
+            idx = torch.multinomial(probs, 1).squeeze(1)
+
+        pitch_next = idx.float().view(1, 1, 1)
+
+        # Δstep
+        step_delta = step_out[:, -1, 0].view(1, 1, 1)
+        dur_val = dur_out[:, -1, 0].view(1, 1, 1)
+
+        step_delta = torch.clamp(step_delta, 0.0, 1.0)
+        dur_val = torch.clamp(dur_val, 0.01, 1.0)
+
+        # convert Δstep → absolute step
+        step_abs = prev_step + step_delta
+        prev_step = step_abs
+
+        next_token = torch.cat([pitch_next, step_abs, dur_val], dim=-1)
+
+        gen = torch.cat([gen, next_token], dim=1)
+
+    return gen.cpu().numpy()
