@@ -1,6 +1,9 @@
 import random
+import sys
 import numpy as np
 import torch
+
+from pathlib import Path
 
 
 # --------------------
@@ -23,6 +26,17 @@ PITCH_VOCAB = 128
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device:", DEVICE)
+
+# ---------------------------------------------------------
+# Basic config
+# ---------------------------------------------------------
+ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+CACHE_DIR = ROOT / "cache"
+CACHE_DIR.mkdir(exist_ok=True)
 
 input_instruments = ['Piaro right', 'Piano left2']
 target_instrument = 'Piano'
