@@ -125,7 +125,6 @@ def prepare_sample(sample,
     }
 
 
-
 # -----------------------------
 # Dataset
 # -----------------------------
@@ -168,4 +167,41 @@ class MIDIDataset(Dataset):
             'pitch_targets': torch.from_numpy(out['pitch_targets']).long(),  # [L_dec]
             'step_targets': torch.from_numpy(out['step_targets']).float(),  # [L_dec, 1]
             'dur_targets': torch.from_numpy(out['dur_targets']).float(),  # [L_dec, 1]
+        }
+
+
+# ---------------------------------------------------------
+# Simple Dataset wrappers (for training)
+# ---------------------------------------------------------
+class SimpleDecDataset(Dataset):
+    def __init__(self, items):
+        # items: list of dicts with dec_in, pitch_targets, step_targets, dur_targets
+        self.items = items
+
+    def __len__(self): return len(self.items)
+
+    def __getitem__(self, idx):
+        it = self.items[idx]
+        return {
+            "dec_in": torch.from_numpy(it["dec_in"]).float(),
+            "pitch_targets": torch.from_numpy(it["pitch_targets"]).long(),
+            "step_targets": torch.from_numpy(it["step_targets"]).float(),
+            "dur_targets": torch.from_numpy(it["dur_targets"]).float()
+        }
+
+
+class EncDecDataset(Dataset):
+    def __init__(self, items):
+        self.items = items
+
+    def __len__(self): return len(self.items)
+
+    def __getitem__(self, idx):
+        it = self.items[idx]
+        return {
+            "enc_in": torch.from_numpy(it["enc_in"]).float(),
+            "dec_in": torch.from_numpy(it["dec_in"]).float(),
+            "pitch_targets": torch.from_numpy(it["pitch_targets"]).long(),
+            "step_targets": torch.from_numpy(it["step_targets"]).float(),
+            "dur_targets": torch.from_numpy(it["dur_targets"]).float()
         }
