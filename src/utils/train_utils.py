@@ -68,8 +68,8 @@ def train_epoch_decoder_only(model, loader, optimizer, criterion, device):
         optimizer.zero_grad()
         pitch_logits, step_out, dur_out = model(dec_in)
         loss, parts = criterion(pitch_logits, step_out, dur_out, dec_tgt)
-        loss.backward();
+        loss.backward()
         optimizer.step()
-        total += loss.item();
+        total += loss.item()
         steps += 1
     return total / max(1, steps)
