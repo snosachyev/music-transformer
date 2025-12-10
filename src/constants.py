@@ -38,6 +38,10 @@ if str(SRC) not in sys.path:
 CACHE_DIR = ROOT / "cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
+OUTPUT_DIR = ROOT / "output"
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+
 input_instruments = ['Piaro right', 'Piano left2']
 target_instrument = 'Piano'
 
