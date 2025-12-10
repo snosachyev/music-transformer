@@ -10,7 +10,7 @@ from src.utils.generate_utils import generate_target_from_melody_encdec
 from src.utils.music21_utils import save_multi_track_midi
 
 
-def generate_stage(items, stats, melody_ckpt, encdec_ckpt=None):
+def generate_stage(items, stats, melody_ckpt, encdec_ckpt=None, length=32):
     melody_model = DecoderOnlyMusicTransformer().to(DEVICE)
     melody_model.load_state_dict(torch.load(melody_ckpt, map_location=DEVICE))
     melody_model.eval()
@@ -20,7 +20,7 @@ def generate_stage(items, stats, melody_ckpt, encdec_ckpt=None):
     seed = seed[None, ...]  # (1, L_seed, 3)
     log.info("Seed shape: %s", seed.shape)
     # gen melody
-    gen_norm = generate_autoregressive_decoder_only(melody_model, seed, length=32, pitch_temp=0.9, cont_temp=0.02,
+    gen_norm = generate_autoregressive_decoder_only(melody_model, seed, length=length, pitch_temp=0.9, cont_temp=0.02,
                                                     device=DEVICE)
     gen_den = denormalize_sequence_global(gen_norm, stats)
     if gen_den.ndim == 3 and gen_den.shape[0] == 1:
