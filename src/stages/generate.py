@@ -1,6 +1,6 @@
 import torch
 
-from src.constants import DEVICE, CACHE_DIR, ROOT
+from src.constants import DEVICE, OUTPUT_DIR
 
 from src.logger import log
 from src.utils.generate_utils import generate_autoregressive_decoder_only
@@ -38,12 +38,12 @@ def generate_stage(items, stats, melody_ckpt, encdec_ckpt=None):
         bass_den = denormalize_sequence_global(bass_norm, stats)
         bass_seq = bass_den[0, 1:, :] if bass_den.ndim == 3 else bass_den[1:, :]
         # save 2-track midi (melody + bass)
-        outp = ROOT / "generated_melody_with_bass.mid"
+        outp = OUTPUT_DIR / "generated_melody_with_bass.mid"
         save_multi_track_midi(melody_seq, bass_seq, [], fp=str(outp), instr1="Piano", instr2="AcousticBass",
                               instr_gen="Piano")
         log.info("Saved generated MIDI with bass: %s", outp)
     else:
         # save only melody
-        outp = ROOT / "generated_melody.mid"
+        outp = OUTPUT_DIR / "generated_melody.mid"
         save_multi_track_midi(melody_seq, [], [], fp=str(outp), instr1="Piano", instr2="", instr_gen="Piano")
         log.info("Saved melody only: %s", outp)
