@@ -66,7 +66,7 @@ def main():
         prepared = pickle.load(f)
     items = prepared["items"]
     stats = prepared["stats"]
-    pitch_offset = prepared["pitch_offset"]
+    # pitch_offset = prepared["pitch_offset"]
 
     # ----------------------------
     # Train Melody (decoder-only)
