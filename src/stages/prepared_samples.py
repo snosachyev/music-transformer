@@ -17,10 +17,17 @@ def stage_prepare(dataset_dir: str, out_pkl: Path):
 
     samples = []
     failed = 0
+
+    # Собираем все инструменты
+    instruments = []
+    for score in midis:
+        instruments.extend(detect_instruments_in_midi(score))
+    global_instruments = set(instruments)
+
     for i, m in enumerate(midis):
         try:
             # use user's extract_sample if available
-            s = extract_sample(m, {}) if 'extract_sample' in globals() else {}
+            s = extract_sample(m, global_instruments)
             # sanitize every note dict: ensure pitch/start/dur
             for inst, notes in list(s.items()):
                 good = []
